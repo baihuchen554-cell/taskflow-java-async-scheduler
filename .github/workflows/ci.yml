@@ -1,0 +1,56 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: taskflow
+          MYSQL_USER: taskflow
+          MYSQL_PASSWORD: ci_taskflow_password
+          MYSQL_ROOT_PASSWORD: ci_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Compile, test and package
+        run: bash mvnw -B -ntp verify
+      - name: Verify JavaScript syntax
+        run: node --check src/main/resources/static/app.js
+      - name: Smoke test against MySQL 8.4
+        env:
+          DB_URL: jdbc:mysql://127.0.0.1:3306/taskflow?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true&useSSL=false
+          DB_USERNAME: taskflow
+          DB_PASSWORD: ci_taskflow_password
+          SCHEDULER_RETRY_DELAY_SECONDS: '1'
+        run: |
+          java -jar target/taskflow-1.0.0.jar > app.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          python3 scripts/smoke_test.py --require-mysql
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics
+          path: |
+            target/surefire-reports/
+            app.log

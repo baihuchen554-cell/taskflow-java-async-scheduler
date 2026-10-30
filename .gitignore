@@ -1,0 +1,11 @@
+/target/
+/.tools/
+/.local/
+/data/
+/.env
+/.idea/
+/.vscode/
+*.iml
+*.log
+*.pid
+__pycache__/

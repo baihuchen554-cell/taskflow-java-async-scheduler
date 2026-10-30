@@ -1,0 +1,9 @@
+.git
+.env
+.tools
+.local
+data
+target
+docs
+.idea
+.vscode

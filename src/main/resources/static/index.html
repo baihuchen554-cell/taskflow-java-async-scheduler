@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="TaskFlow：轻量的 Java 异步任务调度台，提交任务、查看状态并追踪每一次执行。"
+    />
+    <title>TaskFlow · 任务调度台</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到任务列表</a>
+    <!-- 侧栏的连接信息由 /api/system 和任务查询结果共同更新。 -->
+    <aside class="sidebar" aria-label="应用导航">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>TaskFlow
+      </div>
+      <nav>
+        <button
+          class="nav-item active"
+          id="nav-tasks"
+          type="button"
+          aria-current="page"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M9 6h12M9 12h12M9 18h12M3 5h2v2H3zM3 11h2v2H3zM3 17h2v2H3z"
+            /></svg
+          >任务调度
+        </button>
+      </nav>
+      <div class="system-status">
+        <p>
+          <span
+            class="connection-dot"
+            id="connection-dot"
+            aria-hidden="true"
+          ></span
+          ><span id="connection-label">正在连接服务</span>
+        </p>
+        <p class="system-meta" id="system-meta">读取运行环境…</p>
+      </div>
+    </aside>
+
+    <!-- 真实任务列表：首屏不放演示假数据，加载后由 app.js 填充。 -->
+    <main id="main" class="main">
+      <header class="page-header">
+        <div>
+          <h1>任务调度台</h1>
+          <p>提交任务，让后台处理。每一次执行，都有迹可循。</p>
+        </div>
+        <button class="button primary" id="new-task" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" /></svg
+          >新建任务
+        </button>
+      </header>
+
+      <section class="stats" aria-label="任务概览">
+        <div class="stat">
+          <span>总任务</span><strong id="stat-total">—</strong>
+        </div>
+        <div class="stat">
+          <span>执行中</span
+          ><strong id="stat-running" class="ink-purple">—</strong>
+        </div>
+        <div class="stat">
+          <span>已完成</span
+          ><strong id="stat-success" class="ink-green">—</strong>
+        </div>
+        <div class="stat">
+          <span>失败</span><strong id="stat-failed" class="ink-red">—</strong>
+        </div>
+      </section>
+
+      <div class="notice error" id="page-error" role="alert" hidden></div>
+      <section class="task-panel" aria-labelledby="list-title">
+        <div class="panel-heading">
+          <h2 id="list-title">全部任务</h2>
+          <button
+            class="icon-button"
+            id="refresh"
+            type="button"
+            aria-label="刷新任务列表"
+            title="刷新任务列表"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 7v5h-5M19.2 12a7.5 7.5 0 1 0-1.4 4.4M20 12l-3-4" />
+            </svg>
+          </button>
+        </div>
+        <div class="filters" role="group" aria-label="按任务状态筛选">
+          <button
+            class="filter active"
+            type="button"
+            data-status=""
+            aria-pressed="true"
+          >
+            全部
+          </button>
+          <button
+            class="filter"
+            type="button"
+            data-status="PENDING"
+            aria-pressed="false"
+          >
+            等待中
+          </button>
+          <button
+            class="filter"
+            type="button"
+            data-status="RUNNING"
+            aria-pressed="false"
+          >
+            执行中
+          </button>
+          <button
+            class="filter"
+            type="button"
+            data-status="RETRY_WAIT"
+            aria-pressed="false"
+          >
+            重试等待
+          </button>
+          <button
+            class="filter"
+            type="button"
+            data-status="SUCCESS"
+            aria-pressed="false"
+          >
+            已完成
+          </button>
+          <button
+            class="filter"
+            type="button"
+            data-status="FAILED"
+            aria-pressed="false"
+          >
+            失败
+          </button>
+          <button
+            class="filter"
+            type="button"
+            data-status="CANCELLED"
+            aria-pressed="false"
+          >
+            已取消
+          </button>
+        </div>
+        <div
+          class="table-scroll"
+          tabindex="0"
+          role="region"
+          aria-label="任务列表，可横向滚动"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">任务</th>
+                <th scope="col">类型</th>
+                <th scope="col">状态</th>
+                <th scope="col">执行次数</th>
+                <th scope="col">创建时间</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody id="task-rows">
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state"><p>正在加载任务…</p></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <footer class="pagination">
+          <p id="total-label">正在读取…</p>
+          <div class="page-controls">
+            <button
+              class="button secondary small"
+              id="previous-page"
+              type="button"
+              disabled
+            >
+              上一页</button
+            ><span class="page-number" id="page-number">1</span
+            ><span class="page-count" id="page-count">/ 1</span
+            ><button
+              class="button secondary small"
+              id="next-page"
+              type="button"
+              disabled
+            >
+              下一页
+            </button>
+          </div>
+        </footer>
+      </section>
+      <footer class="refresh-note">
+        <span id="last-updated"></span><span>每 3 秒自动刷新</span>
+      </footer>
+    </main>
+
+    <!-- 原生 dialog 负责焦点约束和 Esc 关闭；表单只提交约定的任务参数。 -->
+    <dialog id="create-dialog" class="dialog" aria-labelledby="create-title">
+      <div class="dialog-heading">
+        <div>
+          <h2 id="create-title">新建任务</h2>
+          <p>保存后，调度器将在指定时间自动执行。</p>
+        </div>
+        <button
+          class="icon-button close-dialog"
+          type="button"
+          aria-label="关闭新建任务窗口"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </div>
+      <form id="create-form">
+        <div class="form-body">
+          <div class="field">
+            <label for="task-name"
+              >任务名称 <span class="required">*</span></label
+            ><input
+              id="task-name"
+              name="name"
+              maxlength="100"
+              required
+              placeholder="例如：统计一段文章"
+              autocomplete="off"
+            />
+          </div>
+          <div class="field">
+            <label for="task-type">任务类型</label
+            ><select id="task-type" name="type">
+              <option value="TEXT_STATS">文本统计 · TEXT_STATS</option>
+              <option value="DEMO_TASK">异步与重试演示 · DEMO_TASK</option>
+            </select>
+            <p class="field-help" id="type-help">
+              统计文本字符数、词数与行数。
+            </p>
+          </div>
+          <div class="field">
+            <label for="task-payload"
+              >任务内容
+              <span class="required" id="payload-required">*</span></label
+            ><textarea
+              id="task-payload"
+              name="payload"
+              rows="4"
+              maxlength="10000"
+              required
+              placeholder="输入需要统计的文本…"
+            ></textarea>
+            <p class="field-help">
+              最多 10,000 个字符；内容仅按所选任务类型处理。
+            </p>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="task-schedule">计划执行时间</label
+              ><input
+                id="task-schedule"
+                name="scheduledAt"
+                type="datetime-local"
+                step="1"
+              />
+              <p class="field-help">留空立即排队，使用当前设备时区。</p>
+            </div>
+            <div class="field">
+              <label for="task-retries">最大自动重试次数</label
+              ><input
+                id="task-retries"
+                name="maxRetries"
+                type="number"
+                min="0"
+                max="5"
+                value="2"
+                required
+              />
+              <p class="field-help">0–5 次，不包含首次执行。</p>
+            </div>
+          </div>
+          <div class="form-grid" id="demo-fields" hidden>
+            <div class="field">
+              <label for="task-delay">每次执行耗时（秒）</label
+              ><input
+                id="task-delay"
+                name="delaySeconds"
+                type="number"
+                min="0"
+                max="10"
+                value="2"
+                required
+              />
+              <p class="field-help">0–10 秒，模拟后台处理。</p>
+            </div>
+            <div class="field">
+              <label for="task-fail">前几次执行模拟失败</label
+              ><input
+                id="task-fail"
+                name="failUntilAttempt"
+                type="number"
+                min="0"
+                max="5"
+                value="0"
+                required
+              />
+              <p class="field-help">0 表示不模拟失败。</p>
+            </div>
+          </div>
+          <div class="notice error" id="form-error" role="alert" hidden></div>
+        </div>
+        <footer class="dialog-footer">
+          <button class="text-button" id="fill-demo" type="button">
+            填入演示案例
+          </button>
+          <div>
+            <button class="button secondary close-dialog" type="button">
+              取消</button
+            ><button class="button primary" id="submit-task" type="submit">
+              提交任务
+            </button>
+          </div>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog
+      id="detail-dialog"
+      class="dialog detail-dialog"
+      aria-labelledby="detail-title"
+    >
+      <div class="dialog-heading">
+        <div>
+          <h2 id="detail-title">任务详情</h2>
+          <p id="detail-subtitle">查看任务状态与每次执行记录</p>
+        </div>
+        <button
+          class="icon-button close-dialog"
+          type="button"
+          aria-label="关闭任务详情"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="detail-body">
+        <div class="notice error" id="detail-error" role="alert" hidden></div>
+        <div id="detail-content"><p class="loading-text">正在读取任务…</p></div>
+      </div>
+      <footer class="dialog-footer">
+        <span class="field-help">状态与执行记录每 3 秒自动刷新</span
+        ><button class="button secondary close-dialog" type="button">
+          关闭
+        </button>
+      </footer>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>
